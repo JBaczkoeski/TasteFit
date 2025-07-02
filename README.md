@@ -25,4 +25,4 @@
 - **Database:** MySQL
 - **External APIs:** Spoonacular API
 - **Authentication:** Laravel Sanctum
-- **UI Framework:** Bootstrap
+- **UI Framework:** Tailwind
