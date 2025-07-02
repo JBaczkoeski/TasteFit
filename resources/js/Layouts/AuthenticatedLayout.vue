@@ -19,7 +19,6 @@ const showingNavigationDropdown = ref(false);
                 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <div class="flex h-16 justify-between">
                         <div class="flex">
-                            <!-- Logo -->
                             <div class="flex shrink-0 items-center">
                                 <Link :href="route('dashboard')">
                                     <ApplicationLogo
@@ -30,12 +29,14 @@ const showingNavigationDropdown = ref(false);
                             <div
                                 class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex"
                             >
-                                <NavLink
-                                    :href="route('dashboard')"
-                                    :active="route().current('dashboard')"
-                                >
-                                    Dashboard
-                                </NavLink>
+                                <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
+                                    <NavLink :href="route('dashboard')" :active="route().current('dashboard')">Dashboard</NavLink>
+                                    <NavLink :href="route('plan.meal.index')" :active="route().current('plan.meal.index')">Meal Plans</NavLink>
+                                    <NavLink :href="route('plan.meal.create')" :active="route().current('plan.meal.create')">Create Plan</NavLink>
+                                    <NavLink :href="route('shopping.list.index')" :active="route().current('shopping.list.index')">Shopping List</NavLink>
+                                    <NavLink :href="route('meal.history.index')" :active="route().current('meal.history.index')">History</NavLink>
+                                    <NavLink :href="route('meal.plans.settings.index')" :active="route().current('meal.plans.settings.index')">Settings</NavLink>
+                                </div>
                             </div>
                         </div>
                         <div class="hidden sm:ms-6 sm:flex sm:items-center">
@@ -129,12 +130,12 @@ const showingNavigationDropdown = ref(false);
                     class="sm:hidden"
                 >
                     <div class="space-y-1 pb-3 pt-2">
-                        <ResponsiveNavLink
-                            :href="route('dashboard')"
-                            :active="route().current('dashboard')"
-                        >
-                            Dashboard
-                        </ResponsiveNavLink>
+                        <ResponsiveNavLink :href="route('dashboard')" :active="route().current('dashboard')">Dashboard</ResponsiveNavLink>
+                        <ResponsiveNavLink :href="route('plan.meal.index')" :active="route().current('plan.meal.index')">Meal Plans</ResponsiveNavLink>
+                        <ResponsiveNavLink :href="route('plan.meal.create')" :active="route().current('plan.meal.create')">Create Plan</ResponsiveNavLink>
+                        <ResponsiveNavLink :href="route('shopping.list.index')" :active="route().current('shopping.list.index')">Shopping List</ResponsiveNavLink>
+                        <ResponsiveNavLink :href="route('meal.history.index')" :active="route().current('meal.history.index')">History</ResponsiveNavLink>
+                        <ResponsiveNavLink :href="route('meal.plans.settings.index')" :active="route().current('meal.plans.settings.index')">Settings</ResponsiveNavLink>
                     </div>
                     <div
                         class="border-t border-gray-200 pb-1 pt-4"
