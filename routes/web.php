@@ -22,6 +22,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/meal/plans', [\App\Http\Controllers\MealPlanController::class, 'index'])->name('plan.meal.index');
     Route::get('/create/meal/plans', [\App\Http\Controllers\MealPlanController::class, 'create'])->name('plan.meal.create');
+    Route::post('/generate/meal/plans', [\App\Http\Controllers\MealPlanController::class, 'store'])->name('plan.meal.store');
 
     Route::get('/shopping/list', [\App\Http\Controllers\ShoppingListController::class, 'index'])->name('shopping.list.index');
 

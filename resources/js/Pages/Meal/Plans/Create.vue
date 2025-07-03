@@ -1,7 +1,10 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import axios from 'axios';
+import {ref} from "vue";
 
+const generatedPlan = ref(null);
 const form = useForm({
     name: '',
     calories: '',
@@ -10,13 +13,23 @@ const form = useForm({
     diet: '',
     difficulty: 'Normal',
 });
-
 const cuisineOptions = ['Italian', 'Asian', 'Mediterranean', 'Mexican', 'Indian'];
 const dietOptions = ['None', 'Vegetarian', 'Vegan', 'Keto', 'Gluten-Free'];
 const difficultyOptions = ['Easy', 'Normal', 'Advanced'];
 
-const submit = () => {
-    form.post(route('plans.store'));
+const submit = async () => {
+    try {
+        const response = await axios.post('/generate/meal/plans', {
+            calories: parseInt(form.calories),
+            diet: form.diet,
+            duration: parseInt(form.duration),
+        });
+        generatedPlan.value = response.data;
+        console.log('Generated Plan:', generatedPlan.value);
+        // tu możesz np. przejść do widoku podsumowania lub zapisać do bazy
+    } catch (error) {
+        console.error('Plan generation failed:', error);
+    }
 };
 </script>
 

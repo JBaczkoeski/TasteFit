@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\MealPlanService;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,47 +14,39 @@ use Inertia\Response;
 
 class MealPlanController extends Controller
 {
+    public function __construct(readonly MealPlanService $mealPlanService)
+    {
+    }
+
     public function index()
     {
         return Inertia::render('Meal/Plans/Index');
     }
-    /**
-     * Display the user's profile form.
-     */
-    public function edit(Request $request): Response
-    {
-        return Inertia::render('Profile/Edit', [
-            'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
-            'status' => session('status'),
-        ]);
-    }
 
-    /**
-     * Update the user's profile information.
-     */
     public function create()
     {
         return Inertia::render('Meal/Plans/Create');
     }
 
-    /**
-     * Delete the user's account.
-     */
-    public function destroy(Request $request): RedirectResponse
+    public function store(Request $request)
     {
-        $request->validate([
-            'password' => ['required', 'current_password'],
+        $validated = $request->validate([
+            'calories' => 'required|integer',
+            'diet' => 'nullable|string',
+            'duration' => 'required|integer',
+            'difficulty' => 'nullable|string',
+            'cuisines' => 'nullable|array',
+            'cuisines.*' => 'string',
         ]);
 
-        $user = $request->user();
+        $plan = $this->mealPlanService->generateCustomPlan([
+            'calories' => $validated['calories'],
+            'diet' => $validated['diet'] !== 'None' ? $validated['diet'] : null,
+            'duration' => $validated['duration'],
+            'difficulty' => $validated['difficulty'] ?? 'Normal',
+            'cuisines' => $validated['cuisines'] ?? [],
+        ]);
 
-        Auth::logout();
-
-        $user->delete();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return Redirect::to('/');
+        return response()->json($plan);
     }
 }
