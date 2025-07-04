@@ -15,8 +15,7 @@ use Inertia\Response;
 class MealPlanController extends Controller
 {
     public function __construct(readonly MealPlanService $mealPlanService)
-    {
-    }
+    {}
 
     public function index()
     {

@@ -10,13 +10,16 @@ class MealPlanService
     {
         $plan = [];
 
+        $mealTypes = ['breakfast', 'second breakfast', 'lunch', 'afternoon snack', 'dinner'];
+        $caloriesPerMeal = $options['calories'] / count($mealTypes);
+
         for ($day = 1; $day <= $options['duration']; $day++) {
             $dayMeals = [];
 
-            foreach (['breakfast', 'lunch', 'dinner'] as $type) {
-                $meal = $this->fetchMeal($options, $type, $options['calories'] / 3);
+            foreach ($mealTypes as $type) {
+                $meal = $this->fetchMeal($options, $type, $caloriesPerMeal);
 
-                if ($meal) {;
+                if ($meal) {
                     $dayMeals[] = [
                         'type' => ucfirst($type),
                         'title' => $meal['title'],
