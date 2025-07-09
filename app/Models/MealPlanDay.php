@@ -26,4 +26,9 @@ class MealPlanDay extends Model
     {
         return $this->hasMany(MealPlanDayMeal::class);
     }
+
+    public function shoppingListItems(): HasMany
+    {
+        return $this->hasMany(ShoppingListItem::class);
+    }
 }

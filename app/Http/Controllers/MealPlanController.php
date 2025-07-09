@@ -29,6 +29,7 @@ class MealPlanController extends Controller
             'difficulty' => 'nullable|string',
             'cuisines' => 'nullable|array',
             'cuisines.*' => 'string',
+            'name' => 'string',
             'meals' => 'required|integer|min:1|max:6',
         ]);
 

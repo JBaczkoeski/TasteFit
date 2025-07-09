@@ -27,6 +27,7 @@ const submit = async () => {
             meals: parseInt(form.meals),
             difficulty: form.difficulty,
             cuisines: form.cuisines,
+            name: form.name,
         });
         generatedPlan.value = response.data;
         console.log('Generated Plan:', generatedPlan.value);

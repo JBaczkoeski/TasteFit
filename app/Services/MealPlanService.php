@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Http;
 
 class MealPlanService
 {
+    private array $usedRecipeIds = [];
     public function generateCustomPlan(array $options): array
     {
         $plan = [];
@@ -84,13 +85,17 @@ class MealPlanService
         }
 
         foreach ($data['results'] as $recipe) {
-            $info = $this->getRecipeInformation($recipe['id']);
+            if (in_array($recipe['id'], $this->usedRecipeIds)) {
+                continue;
+            }
 
+            $info = $this->getRecipeInformation($recipe['id']);
             if (! $info) {
                 continue;
             }
 
             if ($this->checkDifficulty($info['readyInMinutes'], $options['difficulty'])) {
+                $this->usedRecipeIds[] = $recipe['id']; // 🔥 zapamiętaj ID
                 return array_merge($recipe, $info);
             }
         }
@@ -135,7 +140,7 @@ class MealPlanService
     {
         $mealPlan = MealPlan::create([
             'user_id' => $userId,
-            'title' => $options['title'] ?? 'Custom Meal Plan',
+            'title' => $options['name'] ?? 'Custom Meal Plan',
             'total_days' => $options['duration'],
             'daily_calories' => $options['calories'],
             'daily_meals' => $options['meals'],
@@ -150,7 +155,7 @@ class MealPlanService
                 'total_calories' => collect($dayData['meal'])->sum('calories'),
             ]);
 
-            foreach ($dayData['meal'] as $mealData) {
+            foreach ($dayData['meal'] as $index => $mealData) {
                 $meal = Meal::firstOrCreate(
                     ['spoonacular_id' => $mealData['id']],
                     [
@@ -183,13 +188,22 @@ class MealPlanService
                         'original' => $ingredientData['original'],
                         'meta' => json_encode($ingredientData['meta']),
                     ]);
+
+                    $day->shoppingListItems()->updateOrCreate(
+                        ['ingredient_id' => $ingredient->id],
+                        [
+                            'total_amount' => $ingredientData['amount'],
+                            'unit' => $ingredientData['unit'],
+                            'meta' => json_encode($ingredientData['meta']),
+                        ]
+                    );
                 }
 
                 $day->mealPlanDayMeal()->create([
                     'meal_id' => $meal->id,
                     'meal_type' => $mealData['type'],
-                    'position' => null,
-                ]);
+                    'position' => $index + 1,
+                    ]);
             }
         }
 
