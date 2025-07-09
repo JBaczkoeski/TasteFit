@@ -12,7 +12,11 @@ class MealPlanController extends Controller
 
     public function index()
     {
-        return Inertia::render('Meal/Plans/Index');
+        $mealPlans = auth()->user()->mealPlans;
+
+        return Inertia::render('Meal/Plans/Index', [
+            'mealPlans' => $mealPlans
+        ]);
     }
 
     public function create()

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -22,6 +23,8 @@ class MealPlan extends Model
         'cuisines',
     ];
 
+    protected $appends = ['created_at_human'];
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
@@ -37,5 +40,12 @@ class MealPlan extends Model
         return [
             'cuisines' => 'array',
         ];
+    }
+
+    protected function createdAtHuman(): Attribute
+    {
+        return Attribute::make(
+            get: fn() => $this->created_at?->translatedFormat('d.m.Y')
+        );
     }
 }

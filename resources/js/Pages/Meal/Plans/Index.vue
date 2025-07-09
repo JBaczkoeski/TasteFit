@@ -1,29 +1,14 @@
 <script setup>
-import { Head, Link } from '@inertiajs/vue3';
+import {Head, Link} from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
-const mealPlans = [
-    {
-        id: 1,
-        name: 'Weight Loss 1500 kcal',
-        duration: '7 days',
-        calories: 1500,
-        created_at: '2025-06-25',
-        status: 'Active',
-    },
-    {
-        id: 2,
-        name: 'Muscle Gain 2800 kcal',
-        duration: '5 days',
-        calories: 2800,
-        created_at: '2025-06-10',
-        status: 'Completed',
-    },
-];
+defineProps({
+    mealPlans: Array
+});
 </script>
 
 <template>
-    <Head title="Meal Plans" />
+    <Head title="Meal Plans"/>
     <AuthenticatedLayout>
         <template #header>
             <h2 class="text-2xl font-bold leading-tight text-gray-800">
@@ -38,7 +23,10 @@ const mealPlans = [
                             <h3 class="text-2xl font-semibold text-gray-800">Saved Meal Plans</h3>
                             <p class="text-gray-500 mt-1">View and manage your past and current meal plans.</p>
                         </div>
-                        <Link :href="route('plan.meal.create')" class="inline-block px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition">+ Create New Plan</Link>
+                        <Link :href="route('plan.meal.create')"
+                              class="inline-block px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition">
+                            + Create New Plan
+                        </Link>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="min-w-full text-sm text-gray-700">
@@ -49,7 +37,7 @@ const mealPlans = [
                                 <th class="px-6 py-3">Duration</th>
                                 <th class="px-6 py-3">Created</th>
                                 <th class="px-6 py-3">Status</th>
-                                <th class="px-6 py-3">Actions</th>
+<!--                                <th class="px-6 py-3">Actions</th>-->
                             </tr>
                             </thead>
                             <tbody>
@@ -58,22 +46,22 @@ const mealPlans = [
                                 :key="plan.id"
                                 class="border-b hover:bg-gray-50 transition"
                             >
-                                <td class="px-6 py-4 font-medium whitespace-nowrap">{{ plan.name }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap">{{ plan.calories }} kcal</td>
-                                <td class="px-6 py-4 whitespace-nowrap">{{ plan.duration }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap">{{ plan.created_at }}</td>
+                                <td class="px-6 py-4 font-medium whitespace-nowrap">{{ plan.title }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap">{{ plan.daily_calories }} kcal</td>
+                                <td class="px-6 py-4 whitespace-nowrap">{{ plan.total_days }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap">{{ plan.created_at_human }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                     <span
                         class="inline-block px-3 py-1 rounded-full text-xs font-semibold"
-                        :class="plan.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'"
+                        :class="plan.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'"
                     >
                       {{ plan.status }}
                     </span>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap space-x-2">
-<!--                                    <Link :href="route('plans.show', plan.id)" class="text-blue-600 hover:underline font-medium">View</Link>-->
-<!--                                    <Link :href="route('plans.edit', plan.id)" class="text-yellow-600 hover:underline font-medium">Edit</Link>-->
-                                </td>
+<!--                                <td class="px-6 py-4 whitespace-nowrap space-x-2">-->
+<!--                                                                        <Link :href="route('plans.show', plan.id)" class="text-blue-600 hover:underline font-medium">View</Link>-->
+<!--                                                                        <Link :href="route('plans.edit', plan.id)" class="text-yellow-600 hover:underline font-medium">Edit</Link>-->
+<!--                                </td>-->
                             </tr>
                             </tbody>
                         </table>
