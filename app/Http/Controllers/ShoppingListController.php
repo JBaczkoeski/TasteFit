@@ -16,6 +16,7 @@ class ShoppingListController extends Controller
     {
         return Inertia::render('ShoppingList/Index');
     }
+
     /**
      * Display the user's profile form.
      */

@@ -2,20 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\ProfileUpdateRequest;
 use App\Services\MealPlanService;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Redirect;
 use Inertia\Inertia;
-use Inertia\Response;
 
 class MealPlanController extends Controller
 {
-    public function __construct(readonly MealPlanService $mealPlanService)
-    {}
+    public function __construct(readonly MealPlanService $mealPlanService) {}
 
     public function index()
     {
@@ -36,6 +29,7 @@ class MealPlanController extends Controller
             'difficulty' => 'nullable|string',
             'cuisines' => 'nullable|array',
             'cuisines.*' => 'string',
+            'meals' => 'required|integer|min:1|max:6',
         ]);
 
         $plan = $this->mealPlanService->generateCustomPlan([
@@ -44,7 +38,10 @@ class MealPlanController extends Controller
             'duration' => $validated['duration'],
             'difficulty' => $validated['difficulty'] ?? 'Normal',
             'cuisines' => $validated['cuisines'] ?? [],
+            'meal' => $validated['meals'],
         ]);
+
+        $mealPlan = $this->mealPlanService->storePlanToDatabase($plan, $validated, auth()->id());
 
         return response()->json($plan);
     }

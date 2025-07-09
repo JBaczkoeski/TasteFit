@@ -9,6 +9,7 @@ const form = useForm({
     name: '',
     calories: '',
     duration: '',
+    meals: 5,
     cuisines: [],
     diet: '',
     difficulty: 'Normal',
@@ -23,6 +24,9 @@ const submit = async () => {
             calories: parseInt(form.calories),
             diet: form.diet,
             duration: parseInt(form.duration),
+            meals: parseInt(form.meals),
+            difficulty: form.difficulty,
+            cuisines: form.cuisines,
         });
         generatedPlan.value = response.data;
         console.log('Generated Plan:', generatedPlan.value);
@@ -63,6 +67,12 @@ const submit = async () => {
                                     <input v-model="form.duration" type="number" class="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500" required />
                                 </div>
                             </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Meals per day</label>
+                                <select v-model="form.meals" class="w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500">
+                                    <option v-for="n in [1,2,3,4,5,6]" :key="n" :value="n">{{ n }} meals</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="space-y-6">
                             <div class="border-b pb-4">
@@ -96,6 +106,7 @@ const submit = async () => {
                                 <li><span class="font-medium text-gray-800">Name:</span> {{ form.name || '—' }}</li>
                                 <li><span class="font-medium text-gray-800">Calories/day:</span> {{ form.calories || '—' }}</li>
                                 <li><span class="font-medium text-gray-800">Duration:</span> {{ form.duration || '—' }} days</li>
+                                <li><span class="font-medium text-gray-800">Meals/day:</span> {{ form.meals || '—' }}</li>
                                 <li><span class="font-medium text-gray-800">Cuisines:</span> {{ form.cuisines.join(', ') || '—' }}</li>
                                 <li><span class="font-medium text-gray-800">Diet:</span> {{ form.diet || '—' }}</li>
                                 <li><span class="font-medium text-gray-800">Difficulty:</span> {{ form.difficulty || '—' }}</li>
