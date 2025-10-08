@@ -21,6 +21,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::get('/meal/plans', [\App\Http\Controllers\MealPlanController::class, 'index'])->name('plan.meal.index');
+    Route::get('/meal/plan/{mealPlan}', [\App\Http\Controllers\MealPlanController::class, 'show'])->name('plan.meal.show');
     Route::get('/create/meal/plans', [\App\Http\Controllers\MealPlanController::class, 'create'])->name('plan.meal.create');
     Route::post('/generate/meal/plans', [\App\Http\Controllers\MealPlanController::class, 'store'])->name('plan.meal.store');
 

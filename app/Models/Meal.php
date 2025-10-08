@@ -20,8 +20,13 @@ class Meal extends Model
         'image',
     ];
 
-    public function mealIngredient(): HasMany
+    public function ingredients(): HasMany
     {
-        return $this->hasMany(MealIngredient::class);
+        return $this->hasMany(MealIngredient::class, 'meal_id');
+    }
+
+    public function mealIngredients(): HasMany
+    {
+        return $this->hasMany(MealIngredient::class, 'meal_id');
     }
 }

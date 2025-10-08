@@ -46,8 +46,11 @@ defineProps({
                                 :key="plan.id"
                                 class="border-b hover:bg-gray-50 transition"
                             >
-                                <td class="px-6 py-4 font-medium whitespace-nowrap">{{ plan.title }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap">{{ plan.daily_calories }} kcal</td>
+                                <td class="px-6 py-4 font-medium whitespace-nowrap">
+                                    <Link :href="route('plan.meal.show', plan.id)" class="text-blue-600 hover:underline">
+                                        {{ plan.title }}
+                                    </Link>
+                                </td>                                <td class="px-6 py-4 whitespace-nowrap">{{ plan.daily_calories }} kcal</td>
                                 <td class="px-6 py-4 whitespace-nowrap">{{ plan.total_days }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap">{{ plan.created_at_human }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap">
