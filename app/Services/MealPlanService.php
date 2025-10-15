@@ -14,93 +14,109 @@ class MealPlanService
     public function generateCustomPlan(array $options): array
     {
         $plan = [];
+        $pairs = $this->allowedMealTypes($options);
+        $userTypes = array_map(fn($p) => $p[0], $pairs);
+        $apiTypes  = array_map(fn($p) => $p[1], $pairs);
+        $targets = $this->caloriesDistribution((int)$options['calories'], count($pairs));
 
-        $defaultTypes = ['breakfast', 'second breakfast', 'lunch', 'afternoon snack', 'dinner', 'evening snack'];
-        $mealTypes = array_slice($defaultTypes, 0, $options['meal']);
-        $caloriesMap = [];
-        $total = $options['calories'];
-
-        if (count($mealTypes) >= 3) {
-            $lunchBonus = $total * 0.10; // np. lunch +10%
-            $base = ($total - $lunchBonus) / count($mealTypes);
-            foreach ($mealTypes as $type) {
-                $caloriesMap[$type] = $type === 'lunch' ? $base + $lunchBonus : $base;
-            }
-        } else {
-            $equal = $total / count($mealTypes);
-            foreach ($mealTypes as $type) {
-                $caloriesMap[$type] = $equal;
-            }
-        }
-
-        for ($day = 1; $day <= $options['duration']; $day++) {
+        for ($day = 1; $day <= (int)$options['duration']; $day++) {
             $dayMeals = [];
-
-            foreach ($mealTypes as $type) {
-                $meal = $this->fetchMeal($options, $type, $caloriesMap[$type]);
-
+            for ($i=0; $i<count($pairs); $i++) {
+                [$userType,$apiType] = $pairs[$i];
+                $kcalTarget = $targets[$i];
+                $meal = $this->fetchMeal($options,$apiType,$kcalTarget,false,false,false);
+                if (!$meal) $meal = $this->fetchMeal($options,$apiType,$kcalTarget,true,false,false);
+                if (!$meal) $meal = $this->fetchMeal($options,$apiType,$kcalTarget,true,true,false);
+                if (!$meal) $meal = $this->fetchMeal($options,$apiType,$kcalTarget,true,true,true);
                 if ($meal) {
                     $dayMeals[] = [
-                        'type' => ucfirst($type),
+                        'type' => $userType,
                         'title' => $meal['title'],
                         'id' => $meal['id'],
-                        'readyInMinutes' => $meal['readyInMinutes'],
+                        'readyInMinutes' => $meal['readyInMinutes'] ?? null,
                         'calories' => $this->extractCalories($meal),
                         'ingredients' => $meal['extendedIngredients'] ?? [],
                         'instructions' => $meal['instructions'] ?? null,
+                        'image' => $meal['image'] ?? null,
                     ];
                 }
             }
-
-            $plan[] = [
-                'day' => $day,
-                'meal' => $dayMeals,
-            ];
+            $need = (int)$options['calories'] - (int)collect($dayMeals)->sum('calories');
+            if ($need > (int)round($options['calories']*0.08)) {
+                $booster = $this->fetchMeal($options,'snack',$need,true,true,true);
+                if ($booster) {
+                    $dayMeals[] = [
+                        'type' => 'evening snack',
+                        'title' => $booster['title'],
+                        'id' => $booster['id'],
+                        'readyInMinutes' => $booster['readyInMinutes'] ?? null,
+                        'calories' => $this->extractCalories($booster),
+                        'ingredients' => $booster['extendedIngredients'] ?? [],
+                        'instructions' => $booster['instructions'] ?? null,
+                        'image' => $booster['image'] ?? null,
+                    ];
+                }
+            }
+            $plan[] = ['day' => $day, 'meal' => array_slice($dayMeals,0,count($pairs))];
         }
-
         return $plan;
     }
 
-    private function fetchMeal(array $options, string $type, int $maxCalories): ?array
+    private function fetchMeal(array $options, string $apiType, int $targetKcal, bool $wider, bool $dropDiet, bool $dropCuisine): ?array
     {
+        $cuisines = $options['cuisines'] ?? [];
+        if (!is_array($cuisines)) $cuisines = [];
+        $cuisineParam = (!$dropCuisine && count($cuisines)) ? implode(',', $cuisines) : null;
+
+        $rng = $wider ? [0.7, 1.35] : [0.9, 1.1];
+        $minK = (int)floor($targetKcal*$rng[0]);
+        $maxK = (int)ceil($targetKcal*$rng[1]);
+
         $query = [
-            'diet' => $options['diet'] !== 'None' ? $options['diet'] : null,
-            'cuisine' => implode(',', $options['cuisines']),
-            'type' => $type,
-            'number' => 5,
+            'diet' => (!$dropDiet && (($options['diet'] ?? 'None') !== 'None')) ? $options['diet'] : null,
+            'cuisine' => $cuisineParam,
+            'type' => $apiType,
+            'number' => 10,
             'instructionsRequired' => true,
             'addRecipeNutrition' => true,
-            'maxCalories' => $maxCalories,
-            'minCalories' => $maxCalories * 0.9,
+            'minCalories' => $minK,
+            'maxCalories' => $maxK,
         ];
 
-        $response = Http::withHeaders([
-            'x-api-key' => config('services.spoonacular.key'),
-        ])->get('https://api.spoonacular.com/recipes/complexSearch', array_filter($query));
+        if (!$wider) $query['maxReadyTime'] = $this->maxReadyTimeFor($options['difficulty'] ?? 'Normal');
 
-        $data = $response->json();
+        $resp = Http::withHeaders(['x-api-key' => config('services.spoonacular.key')])
+            ->get('https://api.spoonacular.com/recipes/complexSearch', array_filter($query, fn($v)=>$v!==null));
 
-        if (empty($data['results'])) {
-            return null;
+        $data = $resp->json();
+        if (empty($data['results'])) return null;
+
+        $sorted = $data['results'];
+        usort($sorted, function($a,$b) use($targetKcal){
+            $ca = $this->extractCalories(['nutrition'=>$a['nutrition']??[]]) ?? 1e9;
+            $cb = $this->extractCalories(['nutrition'=>$b['nutrition']??[]]) ?? 1e9;
+            return abs($ca-$targetKcal) <=> abs($cb-$targetKcal);
+        });
+
+        foreach ($sorted as $r) {
+            $id = (int)$r['id'];
+            if (!$wider && in_array($id,$this->usedRecipeIds,true)) continue;
+            $info = $this->getRecipeInformation($id);
+            if (!$info) continue;
+            if (!$this->checkDifficulty((int)($info['readyInMinutes'] ?? 999), $options['difficulty'] ?? 'Normal') && !$wider) continue;
+            $this->usedRecipeIds[] = $id;
+            return array_merge($r,$info);
         }
-
-        foreach ($data['results'] as $recipe) {
-            if (in_array($recipe['id'], $this->usedRecipeIds)) {
-                continue;
-            }
-
-            $info = $this->getRecipeInformation($recipe['id']);
-            if (! $info) {
-                continue;
-            }
-
-            if ($this->checkDifficulty($info['readyInMinutes'], $options['difficulty'])) {
-                $this->usedRecipeIds[] = $recipe['id']; // 🔥 zapamiętaj ID
-                return array_merge($recipe, $info);
-            }
-        }
-
         return null;
+    }
+
+    private function maxReadyTimeFor(string $level): int
+    {
+        return match ($level) {
+            'Easy' => 25,
+            'Normal' => 45,
+            default => 120,
+        };
     }
 
     private function getRecipeInformation(int $id): ?array
@@ -112,6 +128,100 @@ class MealPlanService
         ]);
 
         return $response->successful() ? $response->json() : null;
+    }
+
+    public function storePlanToDatabase(array $generatedPlan, array $options, int $userId): \App\Models\MealPlan
+    {
+        $mealPlan = MealPlan::create([
+            'user_id' => $userId,
+            'title' => $options['name'] ?? 'Custom Meal Plan',
+            'total_days' => (int)$options['duration'],
+            'daily_calories' => (int)$options['calories'],
+            'daily_meals' => (int)($options['meals'] ?? $options['meal'] ?? 3),
+            'diet_type' => $options['diet'] ?? null,
+            'plan_difficulty' => $options['difficulty'] ?? null,
+            'cuisines' => $options['cuisines'] ?? [],
+        ]);
+
+        foreach ($generatedPlan as $dayData) {
+            $day = $mealPlan->mealPlanDay()->create([
+                'day_number' => (int)$dayData['day'],
+                'total_calories' => (int)collect($dayData['meal'])->sum('calories'),
+            ]);
+
+            foreach ($dayData['meal'] as $index => $mealData) {
+                $meal = Meal::firstOrCreate(
+                    ['spoonacular_id' => (int)$mealData['id']],
+                    [
+                        'title' => $mealData['title'],
+                        'type' => strtolower($mealData['type']),
+                        'ready_in_minutes' => (int)($mealData['readyInMinutes'] ?? 0),
+                        'calories' => (int)($mealData['calories'] ?? 0),
+                        'instructions' => (string)($mealData['instructions'] ?? ''),
+                        'image' => $mealData['image'] ?? null,
+                    ]
+                );
+
+                foreach ($mealData['ingredients'] as $ingredientData) {
+                    $ingredient = Ingredient::firstOrCreate(
+                        ['spoonacular_id' => (int)$ingredientData['id']],
+                        [
+                            'name'  => $ingredientData['name'] ?? ($ingredientData['nameClean'] ?? ''),
+                            'image' => $ingredientData['image'] ?? null,
+                            'aisle' => $ingredientData['aisle'] ?? '',
+                        ]
+                    );
+
+                    $amountMetric = isset($ingredientData['measures']['metric']['amount'])
+                        ? (float) $ingredientData['measures']['metric']['amount']
+                        : null;
+                    $unitMetric = $ingredientData['measures']['metric']['unitShort'] ?? null;
+
+                    if ($amountMetric === null || $amountMetric === 0.0) {
+                        $amountMetric = (float) ($ingredientData['amount'] ?? 0); // ostateczny fallback
+                    }
+                    if (!$unitMetric || strtolower($unitMetric) === 'servings') {
+                        $unitMetric = $ingredientData['consistency'] === 'LIQUID' ? 'ml' : 'g';
+                    }
+
+                    $original = $ingredientData['original'] ?? ($ingredientData['name'] ?? '');
+                    $metaJson = json_encode($ingredientData['meta'] ?? []);
+
+                    MealIngredient::firstOrCreate([
+                        'meal_id'        => $meal->id,
+                        'ingredient_id'  => $ingredient->id,
+                        'amount'         => (float)($ingredientData['amount'] ?? 0),
+                        'unit'           => $ingredientData['unit'] ?? '-',
+                        'amount_metric'  => (float)$amountMetric,
+                        'unit_metric'    => $unitMetric,
+                        'original'       => $original,
+                        'meta'           => $metaJson,
+                    ]);
+
+                    $item = $day->shoppingListItems()->firstOrCreate(
+                        [
+                            'meal_plan_day_id' => $day->id,
+                            'ingredient_id'    => $ingredient->id,
+                            'unit'             => $unitMetric,   // <— TYLKO METRYKA
+                        ],
+                        [
+                            'total_amount' => 0,
+                            'meta'         => $metaJson,
+                        ]
+                    );
+
+                    $item->increment('total_amount', (float) round($amountMetric, 2));
+                }
+
+                $day->mealPlanDayMeal()->create([
+                    'meal_id' => $meal->id,
+                    'meal_type' => $mealData['type'],
+                    'position' => $index + 1,
+                ]);
+            }
+        }
+
+        return $mealPlan;
     }
 
     private function checkDifficulty(int $minutes, string $level): bool
@@ -136,77 +246,41 @@ class MealPlanService
         return null;
     }
 
-    public function storePlanToDatabase(array $generatedPlan, array $options, int $userId): \App\Models\MealPlan
+    private function allowedMealTypes(array $options): array
     {
-        $mealPlan = MealPlan::create([
-            'user_id' => $userId,
-            'title' => $options['name'] ?? 'Custom Meal Plan',
-            'total_days' => $options['duration'],
-            'daily_calories' => $options['calories'],
-            'daily_meals' => $options['meals'],
-            'diet_type' => $options['diet'],
-            'plan_difficulty' => $options['difficulty'],
-            'cuisines' => $options['cuisines'],
-        ]);
+        $count = (int)($options['meals'] ?? $options['meal'] ?? 3);
+        $count = max(1, min(6, $count));
+        $templates = [
+            1 => ['dinner'],
+            2 => ['lunch','dinner'],
+            3 => ['breakfast','lunch','dinner'],
+            4 => ['breakfast','lunch','afternoon snack','dinner'],
+            5 => ['breakfast','afternoon snack','lunch','evening snack','dinner'],
+            6 => ['breakfast','second breakfast','lunch','afternoon snack','dinner','evening snack'],
+        ];
+        $map = [
+            'breakfast' => 'breakfast',
+            'second breakfast' => 'snack',
+            'lunch' => 'main course',
+            'afternoon snack' => 'snack',
+            'dinner' => 'main course',
+            'evening snack' => 'snack',
+        ];
+        $picked = $templates[$count];
+        return array_map(fn($t) => [$t, $map[$t]], $picked);
+    }
 
-        foreach ($generatedPlan as $dayData) {
-            $day = $mealPlan->mealPlanDay()->create([
-                'day_number' => $dayData['day'],
-                'total_calories' => collect($dayData['meal'])->sum('calories'),
-            ]);
-
-            foreach ($dayData['meal'] as $index => $mealData) {
-                $meal = Meal::firstOrCreate(
-                    ['spoonacular_id' => $mealData['id']],
-                    [
-                        'title' => $mealData['title'],
-                        'type' => strtolower($mealData['type']),
-                        'ready_in_minutes' => $mealData['readyInMinutes'],
-                        'calories' => $mealData['calories'],
-                        'instructions' => $mealData['instructions'],
-                    ]
-                );
-
-                foreach ($mealData['ingredients'] as $ingredientData) {
-                    $ingredient = Ingredient::firstOrCreate(
-                        ['spoonacular_id' => $ingredientData['id']],
-                        [
-                            'name' => $ingredientData['name'],
-                            'name_clean' => $ingredientData['nameClean'],
-                            'image' => $ingredientData['image'] ?? null,
-                            'aisle' => $ingredientData['aisle'] ?? null,
-                        ]
-                    );
-
-                    MealIngredient::firstOrCreate([
-                        'meal_id' => $meal->id,
-                        'ingredient_id' => $ingredient->id,
-                        'amount' => $ingredientData['amount'],
-                        'unit' => $ingredientData['unit'],
-                        'amount_metric' => $ingredientData['measures']['metric']['amount'] ?? null,
-                        'unit_metric' => $ingredientData['measures']['metric']['unitShort'] ?? null,
-                        'original' => $ingredientData['original'],
-                        'meta' => json_encode($ingredientData['meta']),
-                    ]);
-
-                    $day->shoppingListItems()->updateOrCreate(
-                        ['ingredient_id' => $ingredient->id],
-                        [
-                            'total_amount' => $ingredientData['amount'],
-                            'unit' => $ingredientData['unit'],
-                            'meta' => json_encode($ingredientData['meta']),
-                        ]
-                    );
-                }
-
-                $day->mealPlanDayMeal()->create([
-                    'meal_id' => $meal->id,
-                    'meal_type' => $mealData['type'],
-                    'position' => $index + 1,
-                    ]);
-            }
-        }
-
-        return $mealPlan;
+    private function caloriesDistribution(int $total, int $meals): array
+    {
+        $weights = [
+            1 => [1.00],
+            2 => [0.45,0.55],
+            3 => [0.25,0.35,0.40],
+            4 => [0.25,0.35,0.10,0.30],
+            5 => [0.20,0.10,0.35,0.10,0.25],
+            6 => [0.18,0.10,0.30,0.10,0.22,0.10],
+        ][$meals];
+        $out=[]; foreach ($weights as $w) $out[]=(int)round($total*$w);
+        return $out;
     }
 }

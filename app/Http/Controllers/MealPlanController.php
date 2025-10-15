@@ -32,6 +32,8 @@ class MealPlanController extends Controller
             'mealPlanDay.mealPlanDayMeal.meal',
             'mealPlanDay.mealPlanDayMeal.meal.ingredients.ingredient',
             'mealPlanDay.shoppingListItems',
+            'mealPlanDay.mealPlanDayMeal.meal.ingredients',
+            'mealPlanDay.shoppingListItems.ingredient',
         ]);
 
         return Inertia::render('MealPlans/Show', [
