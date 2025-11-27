@@ -18,6 +18,8 @@ class Meal extends Model
         'ready_in_minutes',
         'calories',
         'image',
+        'diet',
+        'cuisine',
     ];
 
     public function ingredients(): HasMany

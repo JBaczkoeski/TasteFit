@@ -9,11 +9,12 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create(
-            'meal', function (Blueprint $table) {
+            'meals', function (Blueprint $table) {
                 $table->id();
                 $table->integer('spoonacular_id');
                 $table->string('title');
                 $table->string('type');
+                $table->string('diet');
                 $table->longText('instructions');
                 $table->integer('ready_in_minutes');
                 $table->integer('calories');
