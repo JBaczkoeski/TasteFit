@@ -55,7 +55,7 @@ class MealPlanService
             }
 
             $need = (int)$options['calories'] - (int)collect($dayMeals)->sum('calories');
-            if ($need > (int)round($options['calories'] * 0.08)) {
+            if ($need > (int)round($options['calories'] * 0.05)) {
                 $booster = $this->fetchMeal($options, 'evening snack', 'snack', $need, $day);
 
                 if ($booster) {

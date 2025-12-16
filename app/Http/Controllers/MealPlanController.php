@@ -86,7 +86,7 @@ class MealPlanController extends Controller
             ]
         );
 
-        $mealPlan = $this->mealPlanService->storePlanToDatabase($plan, $validated, auth()->id());
+        $this->mealPlanService->storePlanToDatabase($plan, $validated, auth()->id());
 
         return response()->json($plan);
     }
