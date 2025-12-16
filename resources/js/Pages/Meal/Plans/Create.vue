@@ -2,18 +2,27 @@
 import { Head, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import axios from 'axios';
-import {ref} from "vue";
+import { ref } from 'vue';
+
+const props = defineProps({
+    defaults: {
+        type: Object,
+        default: () => ({}),
+    },
+});
 
 const generatedPlan = ref(null);
+
 const form = useForm({
     name: '',
-    calories: '',
-    duration: '',
-    meals: 5,
-    cuisines: [],
-    diet: '',
-    difficulty: 'Normal',
+    calories: props.defaults.calories ?? '',
+    duration: props.defaults.duration ?? '',
+    meals: props.defaults.meals ?? 5,
+    cuisines: props.defaults.cuisines ?? [],
+    diet: props.defaults.diet ?? 'None',
+    difficulty: props.defaults.difficulty ?? 'Normal',
 });
+
 const cuisineOptions = ['Italian', 'Asian', 'Mediterranean', 'Mexican', 'Indian'];
 const dietOptions = ['None', 'Vegetarian', 'Vegan', 'Keto', 'Gluten-Free'];
 const difficultyOptions = ['Easy', 'Normal', 'Advanced'];
@@ -31,13 +40,11 @@ const submit = async () => {
         });
         generatedPlan.value = response.data;
         console.log('Generated Plan:', generatedPlan.value);
-        // tu możesz np. przejść do widoku podsumowania lub zapisać do bazy
     } catch (error) {
         console.error('Plan generation failed:', error);
     }
 };
 </script>
-
 <template>
     <Head title="Create Meal Plan" />
     <AuthenticatedLayout>

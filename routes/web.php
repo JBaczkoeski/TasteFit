@@ -30,6 +30,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/history', [\App\Http\Controllers\MealPlanHistoryController::class, 'index'])->name('meal.history.index');
 
     Route::get('/meal/plans/settings', [\App\Http\Controllers\MealPlanSettingsController::class, 'index'])->name('meal.plans.settings.index');
+
+    Route::post('/meal/plans/settings', [\App\Http\Controllers\MealPlanSettingsController::class, 'update'])->name('meal.plans.settings.update');
 });
 
 require __DIR__.'/auth.php';

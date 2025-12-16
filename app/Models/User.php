@@ -23,6 +23,13 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'user_id',
+        'default_calories',
+        'default_duration',
+        'preferred_diets',
+        'notifications',
+        'difficulty',
+        'preferred_cuisines',
     ];
 
     /**
@@ -38,6 +45,11 @@ class User extends Authenticatable
     public function mealPlans(): hasMany
     {
         return $this->hasMany(MealPlan::class);
+    }
+
+    public function mealPlanSettings()
+    {
+        return $this->hasOne(\App\Models\MealPlanSetting::class);
     }
 
     /**

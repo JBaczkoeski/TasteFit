@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MealPlan;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,6 +15,18 @@ class ShoppingListController extends Controller
 {
     public function index()
     {
-        return Inertia::render('ShoppingList/Index');
+        $user = auth()->user();
+
+        $plan = MealPlan::with([
+            'mealPlanDay.shoppingListItems.ingredient',
+        ])
+            ->where('user_id', $user->id)
+            ->where('status', 'active')
+            ->latest()
+            ->first();
+
+        return Inertia::render('ShoppingList/Index', [
+            'plan' => $plan,
+        ]);
     }
 }

@@ -19,8 +19,8 @@ class MealPlanController extends Controller
 
         return Inertia::render(
             'Meal/Plans/Index', [
-            'mealPlans' => $mealPlans
-        ]
+                'mealPlans' => $mealPlans
+            ]
         );
     }
 
@@ -41,9 +41,23 @@ class MealPlanController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
-        return Inertia::render('Meal/Plans/Create');
+        $user = $request->user();
+        $settings = $user->mealPlanSettings;
+
+        $defaults = [
+            'calories' => $settings->default_calories ?? 2000,
+            'duration' => $settings->default_duration ?? 7,
+            'meals' => 5,
+            'cuisines' => $settings->preferred_cuisines ?? [],
+            'diet' => ($settings->preferred_diets[0] ?? 'None') ?? 'None',
+            'difficulty' => $settings->difficulty ?? 'Normal',
+        ];
+
+        return Inertia::render('Meal/Plans/Create', [
+            'defaults' => $defaults,
+        ]);
     }
 
     public function store(Request $request)

@@ -12,9 +12,14 @@ class MealPlanService
 {
     private array $usedRecipeIds = [];
     private array $recipeLastUsedDay = [];
+    private array $apiSearchCache = [];
 
     public function generateCustomPlan(array $options): array
     {
+        $this->usedRecipeIds = [];
+        $this->recipeLastUsedDay = [];
+        $this->apiSearchCache = [];
+
         $plan = [];
         $pairs = $this->allowedMealTypes($options);
         $targets = $this->caloriesDistribution((int)$options['calories'], count($pairs));
@@ -76,7 +81,7 @@ class MealPlanService
 
             $plan[] = [
                 'day' => $day,
-                'meal' => array_slice($dayMeals, 0, count($pairs)),
+                'meal' => $dayMeals,
             ];
         }
 
@@ -89,11 +94,12 @@ class MealPlanService
         string $apiType,
         int    $targetKcal,
         int    $day
-    ): ?array {
+    ): ?array
+    {
         $strategies = [
             ['wider' => false, 'dropCuisine' => false],
-            ['wider' => true,  'dropCuisine' => false],
-            ['wider' => true,  'dropCuisine' => true],
+            ['wider' => true, 'dropCuisine' => false],
+            ['wider' => true, 'dropCuisine' => true],
         ];
 
         foreach ($strategies as $s) {
@@ -145,42 +151,94 @@ class MealPlanService
         }
         $cuisineParam = (!$dropCuisine && count($cuisines)) ? implode(',', $cuisines) : null;
 
+        $diet = $this->baseDietFromOptions($options);
+
         $rng = $wider ? [0.7, 1.35] : [0.9, 1.1];
         $minK = (int)floor($targetKcal * $rng[0]);
         $maxK = (int)ceil($targetKcal * $rng[1]);
 
-        $diet = $this->baseDietFromOptions($options);
+        $cacheKey = $this->buildApiCacheKey($options, $userType, $apiType, $targetKcal, $wider, $dropCuisine, false);
 
-        $query = [
-            'diet' => $diet,
-            'cuisine' => $cuisineParam,
-            'type' => $apiType,
-            'number' => 4,
-            'instructionsRequired' => true,
-            'addRecipeNutrition' => true,
-        ];
+        if (!isset($this->apiSearchCache[$cacheKey])) {
+            $query = [
+                'diet' => $diet,
+                'cuisine' => $cuisineParam,
+                'type' => $apiType,
+                'number' => 10, // paczka kandydatów
+                'instructionsRequired' => true,
 
-        if (!$wider) {
-            $query['maxReadyTime'] = $this->maxReadyTimeFor($options['difficulty'] ?? 'Normal');
+                'minCalories' => $minK,
+                'maxCalories' => $maxK,
+            ];
+
+            if (!$wider) {
+                $query['maxReadyTime'] = $this->maxReadyTimeFor($options['difficulty'] ?? 'Normal');
+            }
+
+            $resp = Http::withHeaders(['x-api-key' => config('services.spoonacular.key')])
+                ->get('https://api.spoonacular.com/recipes/complexSearch', array_filter($query, fn($v) => $v !== null));
+
+            if (!$resp->successful()) {
+                return null;
+            }
+
+            $data = $resp->json();
+            $results = $data['results'] ?? [];
+
+            if (!count($results)) {
+                $this->apiSearchCache[$cacheKey] = [
+                    'results' => [],
+                    'index' => 0,
+                    'empty' => true,
+                ];
+                return null;
+            }
+
+            $ids = array_values(array_filter(array_map(fn($r) => (int)($r['id'] ?? 0), $results)));
+            $bulk = $this->getRecipesInformationBulk($ids);
+
+            $byId = [];
+            foreach ($bulk as $b) {
+                $bid = (int)($b['id'] ?? 0);
+                if ($bid) {
+                    $byId[$bid] = $b;
+                }
+            }
+
+            $merged = [];
+            foreach ($results as $r) {
+                $id = (int)($r['id'] ?? 0);
+                if (!$id) {
+                    continue;
+                }
+                $merged[] = isset($byId[$id]) ? array_merge($r, $byId[$id]) : $r;
+            }
+
+            usort($merged, function ($a, $b) use ($targetKcal) {
+                $ca = $this->extractCalories($a) ?? 1_000_000_000;
+                $cb = $this->extractCalories($b) ?? 1_000_000_000;
+                return abs($ca - $targetKcal) <=> abs($cb - $targetKcal);
+            });
+
+            $this->apiSearchCache[$cacheKey] = [
+                'results' => $merged,
+                'index' => 0,
+            ];
         }
 
-        $resp = Http::withHeaders(['x-api-key' => config('services.spoonacular.key')])
-            ->get('https://api.spoonacular.com/recipes/complexSearch', array_filter($query, fn($v) => $v !== null));
-
-        $data = $resp->json();
-        if (empty($data['results'])) {
+        if (!empty($this->apiSearchCache[$cacheKey]['empty'])) {
             return null;
         }
 
-        $sorted = $data['results'];
-        usort($sorted, function ($a, $b) use ($targetKcal) {
-            $ca = $this->extractCalories($a) ?? 1_000_000_000;
-            $cb = $this->extractCalories($b) ?? 1_000_000_000;
-            return abs($ca - $targetKcal) <=> abs($cb - $targetKcal);
-        });
+        $cache =& $this->apiSearchCache[$cacheKey];
+        $results = $cache['results'];
+        $count = count($results);
 
-        foreach ($sorted as $r) {
-            $id = (int)($r['id'] ?? 0);
+        while ($cache['index'] < $count) {
+            $meal = $results[$cache['index']];
+            $cache['index']++;
+
+            $id = (int)($meal['id'] ?? 0);
             if (!$id) {
                 continue;
             }
@@ -193,13 +251,6 @@ class MealPlanService
                 continue;
             }
 
-            $info = $this->getRecipeInformation($id);
-            if (!$info) {
-                continue;
-            }
-
-            $meal = array_merge($r, $info);
-
             $ready = (int)($meal['readyInMinutes'] ?? 999);
             if (!$wider && !$this->checkDifficulty($ready, $options['difficulty'] ?? 'Normal')) {
                 continue;
@@ -210,6 +261,7 @@ class MealPlanService
 
             $meal['diet'] = $diet;
             $meal['diet_type'] = $this->resolveDietType($meal, $options);
+
             if (!isset($meal['cuisine'])) {
                 $meal['cuisine'] = isset($meal['cuisines']) && is_array($meal['cuisines']) && count($meal['cuisines'])
                     ? implode(',', $meal['cuisines'])
@@ -218,6 +270,8 @@ class MealPlanService
 
             return $meal;
         }
+
+        unset($this->apiSearchCache[$cacheKey]);
 
         return null;
     }
@@ -229,7 +283,8 @@ class MealPlanService
         bool   $wider,
         bool   $dropCuisine,
         int    $day
-    ): ?array {
+    ): ?array
+    {
         $diet = $this->baseDietFromOptions($options);
         $cuisines = $options['cuisines'] ?? [];
         if (!is_array($cuisines)) {
@@ -318,13 +373,19 @@ class MealPlanService
             'diet' => $diet,
             'cuisine' => $cuisineParam,
             'type' => $apiType,
-            'number' => 4,
+            'number' => 10,
             'instructionsRequired' => true,
+            'addRecipeInformation' => true,
             'addRecipeNutrition' => true,
         ];
 
-        $resp = Http::withHeaders(['x-api-key' => config('services.spoonacular.key')])
+        $resp = Http::timeout(10)
+            ->withHeaders(['x-api-key' => config('services.spoonacular.key')])
             ->get('https://api.spoonacular.com/recipes/complexSearch', array_filter($query, fn($v) => $v !== null));
+
+        if (!$resp->successful()) {
+            return null;
+        }
 
         $data = $resp->json();
         if (empty($data['results'])) {
@@ -352,12 +413,7 @@ class MealPlanService
                 continue;
             }
 
-            $info = $this->getRecipeInformation($id);
-            if (!$info) {
-                continue;
-            }
-
-            $meal = array_merge($r, $info);
+            $meal = $r;
 
             $this->usedRecipeIds[] = $id;
             $this->recipeLastUsedDay[$id] = $day;
@@ -460,12 +516,15 @@ class MealPlanService
 
     public function storePlanToDatabase(array $generatedPlan, array $options, int $userId): MealPlan
     {
+        $maxMealsPerDay = (int)collect($generatedPlan)->map(fn($d) => count($d['meal'] ?? []))->max();
+        $maxMealsPerDay = $maxMealsPerDay > 0 ? $maxMealsPerDay : (int)($options['meals'] ?? $options['meal'] ?? 3);
+
         $mealPlan = MealPlan::create([
             'user_id' => $userId,
             'title' => $options['name'] ?? 'Custom Meal Plan',
             'total_days' => (int)$options['duration'],
             'daily_calories' => (int)$options['calories'],
-            'daily_meals' => (int)($options['meals'] ?? $options['meal'] ?? 3),
+            'daily_meals' => $maxMealsPerDay,
             'diet_type' => $options['diet'] ?? null,
             'plan_difficulty' => $options['difficulty'] ?? null,
             'cuisines' => $options['cuisines'] ?? [],
@@ -657,5 +716,56 @@ class MealPlanService
         }
 
         return $out;
+    }
+
+    private function buildApiCacheKey(
+        array  $options,
+        string $userType,
+        string $apiType,
+        int    $targetKcal,
+        bool   $wider,
+        bool   $dropCuisine,
+        bool   $fallback = false
+    ): string
+    {
+        $diet = $this->baseDietFromOptions($options) ?? 'None';
+        $cuisines = $options['cuisines'] ?? [];
+        if (!is_array($cuisines)) {
+            $cuisines = [];
+        }
+        sort($cuisines);
+
+        $difficulty = $options['difficulty'] ?? 'Normal';
+
+        return implode('|', [
+            $fallback ? 'fb' : 'main',
+            strtolower($userType),
+            $apiType,
+            $diet,
+            implode(',', $cuisines),
+            $difficulty,
+            $wider ? 'w' : 'n',
+            $dropCuisine ? 'd' : 'c',
+            $targetKcal,
+        ]);
+    }
+
+    private function getRecipesInformationBulk(array $ids): array
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids)));
+        if (!count($ids)) {
+            return [];
+        }
+
+        $response = Http::withHeaders([
+            'x-api-key' => config('services.spoonacular.key'),
+        ])->get('https://api.spoonacular.com/recipes/informationBulk', [
+            'ids' => implode(',', $ids),
+            'includeNutrition' => true,
+        ]);
+
+        $json = $response->successful() ? $response->json() : null;
+
+        return is_array($json) ? $json : [];
     }
 }

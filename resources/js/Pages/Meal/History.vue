@@ -1,34 +1,29 @@
 <script setup>
-import { ref } from 'vue';
-import { Head } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import { Head, Link } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
-const historyItems = [
-    {
-        name: 'Weight Loss Plan – 1500 kcal',
-        created_at: '2025-06-25',
-        duration: 7,
-        calories: 1500,
-        status: 'Completed',
+const props = defineProps({
+    plans: {
+        type: Array,
+        default: () => [],
     },
-    {
-        name: 'Muscle Gain Plan – 2800 kcal',
-        created_at: '2025-06-10',
-        duration: 5,
-        calories: 2800,
-        status: 'Completed',
-    },
-    {
-        name: 'Balanced Diet – 2000 kcal',
-        created_at: '2025-05-15',
-        duration: 10,
-        calories: 2000,
-        status: 'Completed',
-    },
-];
+});
+
+const historyItems = computed(() =>
+    props.plans.map(plan => ({
+        id: plan.id,
+        name: plan.title,
+        created_at: plan.created_at,
+        duration: plan.total_days,
+        calories: plan.daily_calories,
+        status: plan.status || 'Completed',
+    }))
+);
 </script>
+
 <template>
-    <Head title="History"/>
+    <Head title="History" />
 
     <AuthenticatedLayout>
         <template #header>
@@ -54,18 +49,29 @@ const historyItems = [
                             <tbody>
                             <tr
                                 v-for="plan in historyItems"
-                                :key="plan.name"
+                                :key="plan.id"
                                 class="border-b hover:bg-gray-50 transition"
                             >
-                                <td class="px-4 py-3 font-medium text-gray-800">{{ plan.name }}</td>
-                                <td class="px-4 py-3">{{ plan.calories }} kcal</td>
-                                <td class="px-4 py-3">{{ plan.duration }} days</td>
-                                <td class="px-4 py-3">{{ plan.created_at }}</td>
-                                <td class="px-4 py-3 text-green-600 font-semibold">{{ plan.status }}</td>
+                                <td class="px-4 py-3 font-medium text-gray-800">
+                                    {{ plan.name }}
+                                </td>
+                                <td class="px-4 py-3">
+                                    {{ plan.calories }} kcal
+                                </td>
+                                <td class="px-4 py-3">
+                                    {{ plan.duration }} days
+                                </td>
+                                <td class="px-4 py-3">
+                                    {{ plan.created_at }}
+                                </td>
+                                <td class="px-4 py-3 text-green-600 font-semibold">
+                                    {{ plan.status }}
+                                </td>
                             </tr>
                             </tbody>
                         </table>
                     </div>
+
                     <div v-if="historyItems.length === 0" class="text-center text-gray-500 mt-6">
                         You haven't generated any meal plans yet.
                     </div>

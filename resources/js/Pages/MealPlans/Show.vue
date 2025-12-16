@@ -45,13 +45,28 @@ const shopping = computed(() => {
     const items = {}
     sortedDays.value.forEach(d => {
         (d.shopping_list_items || d.shoppingListItems || []).forEach(it => {
-            const key = (it.ingredient_name || it.name || '').toLowerCase() + '|' + (it.unit || '')
-            if (!key.trim()) return
-            if (!items[key]) items[key] = {name: it.ingredient_name || it.name, amount: 0, unit: it.unit || ''}
-            items[key].amount += Number(it.amount || 0)
+            const baseName = it.ingredient_name || it.name || it.ingredient?.name || ''
+            const unit = it.unit || ''
+
+            if (!baseName.trim()) return
+
+            const key = baseName.toLowerCase() + '|' + unit
+
+            if (!items[key]) {
+                items[key] = {
+                    name: baseName,
+                    amount: 0,
+                    unit,
+                }
+            }
+
+            items[key].amount += Number(it.amount ?? it.total_amount ?? 0)
         })
     })
-    return Object.values(items).sort((a, b) => a.name.localeCompare(b.name))
+
+    return Object
+        .values(items)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
 })
 
 function perDayShopping(day) {
