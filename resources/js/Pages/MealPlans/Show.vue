@@ -14,6 +14,32 @@ const statusClass = computed(() =>
         : 'bg-zinc-100 text-zinc-700'
 )
 
+const replaceModalOpen = ref(false)
+const replaceTarget = ref(null)
+
+function openReplaceModal(day, m) {
+    replaceTarget.value = {
+        dayId: day.id,
+        mealPlanDayMealId: m.id,
+        mealId: m.meal?.id ?? m.meal_id ?? null,
+        title: mealTitle(m),
+    }
+    replaceModalOpen.value = true
+}
+
+function closeReplaceModal() {
+    replaceModalOpen.value = false
+    replaceTarget.value = null
+}
+
+function confirmReplace() {
+    if (!replaceTarget.value) return
+
+    console.log('Replace confirmed:', replaceTarget.value)
+
+    closeReplaceModal()
+}
+
 const mealTypeOrder = {
     breakfast: 1,
     'second breakfast': 2,
@@ -147,7 +173,6 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                         </div>
                     </div>
 
-                    <!-- tabs -->
                     <div class="px-6 pt-4">
                         <div class="inline-flex rounded-full border border-zinc-200 bg-zinc-50 p-1">
                             <button class="px-4 py-2 rounded-full text-sm transition"
@@ -243,6 +268,12 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                                             >
                                                 <span>Show instructions</span>
                                             </button>
+                                            <button
+                                                @click="openReplaceModal(day, m)"
+                                                class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-400 focus:ring-offset-2"
+                                            >
+                                                Replace meal
+                                            </button>
                                             <a
                                                 v-if="m.meal?.source_url"
                                                 :href="m.meal.source_url"
@@ -307,6 +338,70 @@ const show = id => (expanded.value[id] = !expanded.value[id])
             </div>
         </div>
     </AuthenticatedLayout>
+
+    <teleport to="body">
+        <transition name="fade">
+            <div
+                v-if="replaceModalOpen"
+                class="fixed inset-0 z-[100] flex items-center justify-center p-4"
+                @keydown.esc.prevent="closeReplaceModal"
+                tabindex="-1"
+            >
+                <!-- backdrop -->
+                <div class="absolute inset-0 bg-black/40" @click="closeReplaceModal"></div>
+
+                <!-- panel -->
+                <div
+                    class="relative w-full max-w-lg rounded-2xl bg-white shadow-xl ring-1 ring-black/10"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="replace-title"
+                >
+                    <div class="p-6">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <h3 id="replace-title" class="text-lg font-bold text-zinc-900">
+                                    Replace this meal?
+                                </h3>
+                                <p class="mt-2 text-sm text-zinc-600">
+                                    You are about to replace
+                                    <span class="font-semibold text-zinc-900">“{{ replaceTarget?.title }}”</span>.
+                                    This action will update your meal plan.
+                                </p>
+                            </div>
+
+                            <button
+                                @click="closeReplaceModal"
+                                class="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                            <button
+                                @click="closeReplaceModal"
+                                class="inline-flex justify-center rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-300"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                @click="confirmReplace"
+                                class="inline-flex justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                            >
+                                Yes, replace it
+                            </button>
+                        </div>
+
+                        <p class="mt-3 text-xs text-zinc-500">
+                            Tip: Press ESC to close.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </transition>
+    </teleport>
 </template>
 
 <style scoped>
