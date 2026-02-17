@@ -6,6 +6,8 @@ use App\Models\Ingredient;
 use App\Models\Meal;
 use App\Models\MealIngredient;
 use App\Models\MealPlan;
+use App\Models\MealPlanDay;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 class MealPlanService
@@ -767,5 +769,306 @@ class MealPlanService
         $json = $response->successful() ? $response->json() : null;
 
         return is_array($json) ? $json : [];
+    }
+
+    public function replaceSingleMealInDay(MealPlan $mealPlan, int $dayId, int $mealPlanDayMealId): array
+    {
+        return DB::transaction(function () use ($mealPlan, $dayId, $mealPlanDayMealId) {
+            $day = $mealPlan->mealPlanDay()
+                ->whereKey($dayId)
+                ->firstOrFail();
+
+            $dayMeal = $day->mealPlanDayMeal()
+                ->whereKey($mealPlanDayMealId)
+                ->with(['meal', 'meal.ingredients.ingredient'])
+                ->firstOrFail();
+
+            $options = [
+                'calories' => (int) $mealPlan->daily_calories,
+                'diet' => $mealPlan->diet_type,
+                'duration' => (int) $mealPlan->total_days,
+                'difficulty' => $mealPlan->plan_difficulty ?? 'Normal',
+                'cuisines' => is_array($mealPlan->cuisines) ? $mealPlan->cuisines : (array) ($mealPlan->cuisines ?? []),
+                'meals' => (int) $mealPlan->daily_meals,
+            ];
+
+            $this->primeUsedRecipesFromMealPlan($mealPlan);
+
+            $orderedMeals = $this->orderedDayMeals($day);
+            $targets = $this->caloriesDistribution((int) $options['calories'], max(1, count($orderedMeals)));
+
+            $slotIndex = 0;
+            foreach ($orderedMeals as $idx => $row) {
+                if ((int) $row->id === (int) $dayMeal->id) {
+                    $slotIndex = (int) $idx;
+                    break;
+                }
+            }
+
+            $targetKcal = (int) ($targets[$slotIndex] ?? (int) ($dayMeal->meal?->calories ?? 0));
+            $userType = (string) $dayMeal->meal_type;
+            $apiType = $this->mapUserMealTypeToApiType($userType);
+
+            $newMealPayload = $this->fetchMeal(
+                $options,
+                $userType,
+                $apiType,
+                $targetKcal,
+                (int) $day->day_number
+            );
+
+            if (!$newMealPayload) {
+                abort(422, 'No replacement meal found for selected criteria.');
+            }
+
+            $newMealModel = $this->persistMealPayload($newMealPayload, $options);
+
+            if ((int) $newMealModel->id === (int) $dayMeal->meal_id) {
+                $newMealPayload2 = $this->fetchMeal(
+                    $options,
+                    $userType,
+                    $apiType,
+                    (int) round($targetKcal * 1.05),
+                    (int) $day->day_number
+                );
+
+                if ($newMealPayload2) {
+                    $newMealModel2 = $this->persistMealPayload($newMealPayload2, $options);
+                    if ((int) $newMealModel2->id !== (int) $dayMeal->meal_id) {
+                        $newMealModel = $newMealModel2;
+                    }
+                }
+            }
+
+            $dayMeal->update([
+                'meal_id' => (int) $newMealModel->id,
+            ]);
+
+            $day->load(['mealPlanDayMeal.meal']);
+            $dayTotalCalories = (int) $day->mealPlanDayMeal->sum(fn($m) => (int) ($m->meal?->calories ?? 0));
+
+            $day->update([
+                'total_calories' => $dayTotalCalories,
+            ]);
+
+            $this->rebuildDayShoppingList($day);
+
+            $day->load([
+                'mealPlanDayMeal' => fn($q) => $q->orderBy('position'),
+                'mealPlanDayMeal.meal',
+                'mealPlanDayMeal.meal.ingredients.ingredient',
+                'shoppingListItems.ingredient',
+            ]);
+
+            return [
+                'day' => $day,
+                'replaced' => [
+                    'meal_plan_day_meal_id' => (int) $dayMeal->id,
+                    'meal_id' => (int) $newMealModel->id,
+                ],
+            ];
+        });
+    }
+
+    private function mapUserMealTypeToApiType(string $userType): string
+    {
+        $t = strtolower(trim($userType));
+
+        return match ($t) {
+            'breakfast' => 'breakfast',
+            'second breakfast' => 'snack',
+            'afternoon snack' => 'snack',
+            'evening snack' => 'snack',
+            'supper' => 'snack',
+            'lunch' => 'main course',
+            'dinner' => 'main course',
+            default => 'main course',
+        };
+    }
+
+    private function primeUsedRecipesFromMealPlan(MealPlan $mealPlan): void
+    {
+        $this->usedRecipeIds = [];
+        $this->recipeLastUsedDay = [];
+        $this->apiSearchCache = [];
+
+        $mealPlan->loadMissing(['mealPlanDay.mealPlanDayMeal.meal']);
+
+        foreach ($mealPlan->mealPlanDay as $day) {
+            foreach ($day->mealPlanDayMeal as $dayMeal) {
+                $spoonacularId = (int) ($dayMeal->meal?->spoonacular_id ?? 0);
+                if ($spoonacularId <= 0) {
+                    continue;
+                }
+
+                $this->usedRecipeIds[] = $spoonacularId;
+                $this->recipeLastUsedDay[$spoonacularId] = (int) $day->day_number;
+            }
+        }
+
+        $this->usedRecipeIds = array_values(array_unique($this->usedRecipeIds));
+    }
+
+    private function orderedDayMeals(MealPlanDay $day): array
+    {
+        $mealTypeOrder = [
+            'breakfast' => 1,
+            'second breakfast' => 2,
+            'afternoon snack' => 3,
+            'snack' => 3,
+            'lunch' => 4,
+            'dinner' => 5,
+            'evening snack' => 6,
+            'supper' => 6,
+            'other' => 99,
+        ];
+
+        $day->loadMissing(['mealPlanDayMeal']);
+
+        $list = $day->mealPlanDayMeal->all();
+
+        usort($list, function ($a, $b) use ($mealTypeOrder) {
+            $ta = strtolower((string) ($a->meal_type ?? 'other'));
+            $tb = strtolower((string) ($b->meal_type ?? 'other'));
+            $oa = (int) ($mealTypeOrder[$ta] ?? 99);
+            $ob = (int) ($mealTypeOrder[$tb] ?? 99);
+
+            if ($oa !== $ob) {
+                return $oa <=> $ob;
+            }
+
+            return ((int) ($a->position ?? 0)) <=> ((int) ($b->position ?? 0));
+        });
+
+        return $list;
+    }
+
+    private function persistMealPayload(array $mealPayload, array $options): Meal
+    {
+        $diet = $mealPayload['diet'] ?? $this->baseDietFromOptions($options);
+        $dietType = $this->resolveDietType($mealPayload, $options);
+        $cuisine = $mealPayload['cuisine'] ?? (
+        isset($mealPayload['cuisines']) && is_array($mealPayload['cuisines']) && count($mealPayload['cuisines'])
+            ? implode(',', $mealPayload['cuisines'])
+            : null
+        );
+
+        $spoonacularId = (int) ($mealPayload['id'] ?? 0);
+
+        $meal = Meal::firstOrCreate(
+            ['spoonacular_id' => $spoonacularId],
+            [
+                'title' => (string) ($mealPayload['title'] ?? 'Meal'),
+                'type' => strtolower((string) ($mealPayload['type'] ?? 'other')),
+                'ready_in_minutes' => (int) ($mealPayload['readyInMinutes'] ?? 0),
+                'calories' => (int) ($mealPayload['calories'] ?? $this->extractCalories($mealPayload) ?? 0),
+                'diet' => $diet,
+                'diet_type' => $dietType,
+                'cuisine' => $cuisine,
+                'instructions' => (string) ($mealPayload['instructions'] ?? ''),
+                'image' => $mealPayload['image'] ?? null,
+            ]
+        );
+
+        $ingredients = $mealPayload['extendedIngredients']
+            ?? $mealPayload['ingredients']
+            ?? [];
+
+        if (!is_array($ingredients)) {
+            $ingredients = [];
+        }
+
+        foreach ($ingredients as $ingredientData) {
+            $ingredientId = (int) ($ingredientData['id'] ?? 0);
+
+            if ($ingredientId <= 0) {
+                continue;
+            }
+
+            $ingredient = Ingredient::firstOrCreate(
+                ['spoonacular_id' => $ingredientId],
+                [
+                    'name' => $ingredientData['name'] ?? ($ingredientData['nameClean'] ?? ''),
+                    'image' => $ingredientData['image'] ?? null,
+                    'aisle' => $ingredientData['aisle'] ?? '',
+                ]
+            );
+
+            $amountMetric = null;
+            $unitMetric = null;
+
+            if (isset($ingredientData['measures']['metric']['amount'])) {
+                $amountMetric = (float) $ingredientData['measures']['metric']['amount'];
+            }
+            if (isset($ingredientData['measures']['metric']['unitShort'])) {
+                $unitMetric = (string) $ingredientData['measures']['metric']['unitShort'];
+            }
+
+            if ($amountMetric === null || $amountMetric === 0.0) {
+                $amountMetric = (float) ($ingredientData['amount'] ?? 0);
+            }
+
+            if (!$unitMetric || strtolower($unitMetric) === 'servings') {
+                $unitMetric = ($ingredientData['consistency'] ?? '') === 'LIQUID' ? 'ml' : 'g';
+            }
+
+            $original = $ingredientData['original'] ?? ($ingredientData['name'] ?? '');
+            $metaJson = json_encode($ingredientData['meta'] ?? []);
+
+            MealIngredient::firstOrCreate([
+                'meal_id' => $meal->id,
+                'ingredient_id' => $ingredient->id,
+                'amount' => (float) ($ingredientData['amount'] ?? 0),
+                'unit' => $ingredientData['unit'] ?? '-',
+                'amount_metric' => (float) $amountMetric,
+                'unit_metric' => $unitMetric,
+                'original' => $original,
+                'meta' => $metaJson,
+            ]);
+        }
+
+        return $meal;
+    }
+
+    private function rebuildDayShoppingList(MealPlanDay $day): void
+    {
+        $day->loadMissing(['mealPlanDayMeal.meal.ingredients.ingredient']);
+
+        $day->shoppingListItems()->delete();
+
+        foreach ($day->mealPlanDayMeal as $dayMeal) {
+            $meal = $dayMeal->meal;
+            if (!$meal) {
+                continue;
+            }
+
+            foreach ($meal->ingredients as $mealIngredient) {
+                $ingredientId = (int) ($mealIngredient->ingredient_id ?? 0);
+                if ($ingredientId <= 0) {
+                    continue;
+                }
+
+                $unitMetric = (string) ($mealIngredient->unit_metric ?? '');
+                $amountMetric = (float) ($mealIngredient->amount_metric ?? 0);
+
+                if ($amountMetric <= 0) {
+                    continue;
+                }
+
+                $item = $day->shoppingListItems()->firstOrCreate(
+                    [
+                        'meal_plan_day_id' => (int) $day->id,
+                        'ingredient_id' => $ingredientId,
+                        'unit' => $unitMetric,
+                    ],
+                    [
+                        'total_amount' => 0,
+                        'meta' => $mealIngredient->meta ?? null,
+                    ]
+                );
+
+                $item->increment('total_amount', (float) round($amountMetric, 2));
+            }
+        }
     }
 }

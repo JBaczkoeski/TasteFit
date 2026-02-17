@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MealPlan;
 use App\Services\MealPlanService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -89,5 +90,25 @@ class MealPlanController extends Controller
         $this->mealPlanService->storePlanToDatabase($plan, $validated, auth()->id());
 
         return response()->json($plan);
+    }
+
+    public function replaceMeal(Request $request, MealPlan $mealPlan): JsonResponse
+    {
+        if ((int) $mealPlan->user_id !== (int) auth()->id()) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'day_id' => ['required', 'integer'],
+            'meal_plan_day_meal_id' => ['required', 'integer'],
+        ]);
+
+        $result = $this->mealPlanService->replaceSingleMealInDay(
+            mealPlan: $mealPlan,
+            dayId: (int) $validated['day_id'],
+            mealPlanDayMealId: (int) $validated['meal_plan_day_meal_id'],
+        );
+
+        return response()->json($result);
     }
 }

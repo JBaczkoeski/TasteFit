@@ -1,7 +1,8 @@
 <script setup>
-import {Head, Link} from '@inertiajs/vue3'
+import { Head, Link, router } from '@inertiajs/vue3'
 import {computed, ref} from 'vue'
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue'
+import axios from 'axios'
 
 const props = defineProps({plan: Object})
 
@@ -32,12 +33,21 @@ function closeReplaceModal() {
     replaceTarget.value = null
 }
 
-function confirmReplace() {
+async function confirmReplace() {
     if (!replaceTarget.value) return
 
-    console.log('Replace confirmed:', replaceTarget.value)
+    await axios.put(route('plan.meal.replace', { mealPlan: props.plan.id }), {
+        day_id: replaceTarget.value.dayId,
+        meal_plan_day_meal_id: replaceTarget.value.mealPlanDayMealId,
+    })
 
     closeReplaceModal()
+
+    router.reload({
+        only: ['plan'],
+        preserveScroll: true,
+        preserveState: true,
+    })
 }
 
 const mealTypeOrder = {
@@ -153,7 +163,6 @@ const show = id => (expanded.value[id] = !expanded.value[id])
         <div class="py-6">
             <div class="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
                 <div class="rounded-2xl border border-zinc-200 bg-white shadow-sm">
-                    <!-- top stats -->
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 border-b border-zinc-200">
                         <div class="rounded-xl p-4 bg-zinc-50">
                             <div class="text-xs uppercase tracking-wider text-zinc-500">Days</div>
@@ -186,7 +195,6 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                         </div>
                     </div>
 
-                    <!-- days -->
                     <div v-if="tab==='days'" class="p-6 space-y-8">
                         <div v-for="day in sortedDays" :key="day.id"
                              class="rounded-2xl overflow-hidden ring-1 ring-zinc-200">
@@ -204,7 +212,6 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                                 </div>
                             </div>
 
-                            <!-- grid: dokładnie 3 karty w rzędzie na desktopie -->
                             <div class="p-5">
                                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                                     <div
@@ -212,7 +219,6 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                                         :key="m.id"
                                         class="flex flex-col h-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm hover:shadow-md transition"
                                     >
-                                        <!-- header (stała wysokość obrazu) -->
                                         <div class="relative">
                                             <img :src="img(m)" alt="" class="h-44 w-full object-cover">
                                             <div
@@ -242,25 +248,32 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                                             </div>
                                         </div>
 
-                                        <!-- body (rośnie) -->
-                                        <div class="p-4 space-y-3 flex-1">
-                                            <div class="text-xs uppercase text-zinc-500">Ingredients</div>
-                                            <ul class="text-sm text-zinc-800 space-y-1">
-                                                <li v-for="ing in (m.meal?.ingredients || [])" :key="ing.id"
-                                                    class="flex items-center justify-between">
-                                                    <span class="truncate">{{ ing.ingredient?.name || ing.name }}</span>
-                                                    <span class="text-zinc-500 ml-3 shrink-0">
-                            <span v-if="Number(ing.amount_metric)">{{ Number(ing.amount_metric) }}</span>
-                            <span v-if="ing.unit_metric"> {{ ing.unit_metric }}</span>
-                          </span>
-                                                </li>
-                                                <li v-if="!m.meal || !m.meal.ingredients || m.meal.ingredients.length===0"
-                                                    class="text-zinc-400">No ingredients
-                                                </li>
-                                            </ul>
+                                        <div class="p-4 space-y-3 flex-1 min-h-0">
+                                            <div class="text-xs uppercase text-zinc-500 flex items-center justify-between">
+                                                <span>Ingredients</span>
+                                                <span class="text-[11px] text-zinc-400" v-if="(m.meal?.ingredients || []).length">
+                                                    {{ (m.meal?.ingredients || []).length }}
+                                                </span>
+                                            </div>
+
+                                            <div class="max-h-40 overflow-y-auto pr-2 ingredients-scroll">
+                                                <ul class="text-sm text-zinc-800 space-y-1">
+                                                    <li v-for="ing in (m.meal?.ingredients || [])" :key="ing.id"
+                                                        class="flex items-center justify-between gap-3">
+                                                        <span class="truncate">{{ ing.ingredient?.name || ing.name }}</span>
+                                                        <span class="text-zinc-500 shrink-0">
+                                                            <span v-if="Number(ing.amount_metric)">{{ Number(ing.amount_metric) }}</span>
+                                                            <span v-if="ing.unit_metric"> {{ ing.unit_metric }}</span>
+                                                        </span>
+                                                    </li>
+
+                                                    <li v-if="!m.meal || !m.meal.ingredients || m.meal.ingredients.length===0" class="text-zinc-400">
+                                                        No ingredients
+                                                    </li>
+                                                </ul>
+                                            </div>
                                         </div>
 
-                                        <!-- footer (stały układ przycisków) -->
                                         <div class="px-4 pb-4 pt-2 mt-auto flex flex-wrap items-center gap-3">
                                             <button
                                                 @click="show(m.id)"
@@ -284,11 +297,12 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                                             </a>
                                         </div>
 
-                                        <!-- expandable instructions -->
                                         <transition name="fade">
                                             <div v-if="expanded[m.id]"
                                                  class="mx-4 mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                                                <p class="whitespace-pre-line">{{ stripTags(m.meal?.instructions) }}</p>
+                                                <div class="max-h-44 overflow-y-auto pr-2 ingredients-scroll">
+                                                    <p class="whitespace-pre-line">{{ stripTags(m.meal?.instructions) }}</p>
+                                                </div>
                                             </div>
                                         </transition>
                                     </div>
@@ -300,7 +314,6 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                                     <span class="h-px flex-1 bg-zinc-200"></span>
                                 </div>
 
-                                <!-- UŻYJ perDayShopping(day), a nie surowej listy -->
                                 <div class="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                     <div v-for="row in perDayShopping(day)" :key="row.id + row.unit"
                                          class="rounded-xl px-3 py-2 border border-zinc-200 bg-zinc-50 text-sm text-zinc-700">
@@ -311,7 +324,6 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                         </div>
                     </div>
 
-                    <!-- shopping tab -->
                     <div v-else class="p-6">
                         <div v-if="shopping.length" class="overflow-x-auto rounded-2xl ring-1 ring-zinc-200">
                             <table class="min-w-full text-sm">
@@ -347,10 +359,8 @@ const show = id => (expanded.value[id] = !expanded.value[id])
                 @keydown.esc.prevent="closeReplaceModal"
                 tabindex="-1"
             >
-                <!-- backdrop -->
                 <div class="absolute inset-0 bg-black/40" @click="closeReplaceModal"></div>
 
-                <!-- panel -->
                 <div
                     class="relative w-full max-w-lg rounded-2xl bg-white shadow-xl ring-1 ring-black/10"
                     role="dialog"
